@@ -438,7 +438,7 @@ txpool path instead — the exclusion is honored, never widened.
   "quotes": 1, "liveQuotes": 1, "overlaySlots": 1,
   "builders": ["48club", "blockrazor"],
   "pendingBundles": 0,
-  "maxQuoteAgeMs": 120000,
+  "maxQuoteAgeMs": 2000,
   "quoteStreamSubscribers": 0,
   "priceLevels": {
     "intervalMs": 200, "subscribers": 1,
