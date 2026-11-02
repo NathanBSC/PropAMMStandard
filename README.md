@@ -65,9 +65,9 @@ e2e/
   transaction model. `eth_call`, `eth_estimateGas`, and `eth_simulateV1`
   use the caller's quote overlay at the canonical tip; with a console
   configured, all three require a valid taker key before EVM execution,
-  including historical reads and calls without an overlay. `debug_traceCall`
-  receives no quote overlay. `eth_sendRawTransaction` submits an ordinary
-  signed transaction; `eth_sendRawTransactionSync` waits for its receipt.
+  including historical reads and calls without an overlay.
+  `eth_sendRawTransaction` submits an ordinary signed transaction;
+  `eth_sendRawTransactionSync` waits for its receipt.
   HTTP/WS endpoints with `pamm` registered expose a fixed
   [18-method ETH allowlist](./docs/api-guide.md#1-connection--authentication),
   including transaction and receipt lookups; other `eth_*` methods return

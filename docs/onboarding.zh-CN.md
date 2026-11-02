@@ -270,10 +270,11 @@ relayer 请求都放在 `x-api-key` 请求头里。
 Relayer RPC 端点：`https://propamm.bnbchain.org`（WS 订阅走同一主机的
 `wss://`）。注册了 `pamm` 的 HTTP/WS 端点对 `eth_*` 使用固定的
 [18 个方法白名单](./api-guide.zh-CN.md#1-连接与鉴权)，其余 ETH 方法返回
-`-32601`。普通链 / 账户查询，以及 `eth_getTransactionByHash` /
-`eth_getTransactionReceipt` 可直接在 relayer 查询，无需 taker Key。
-白名单以外的读取请走普通 BSC RPC。PropAMM 池子的价格来自 maker 的报价
-overlay，只有 relayer 知道；拿到报价有三种方式，按接入成本从低到高：
+`-32601`。普通链 / 账户查询可直接在 relayer 上进行，无需 taker Key。
+白名单以外的读取请走普通 BSC RPC。
+
+PropAMM 池子的价格来自 maker 的报价 overlay，只有 relayer 知道；
+拿到报价有三种方式，按接入成本从低到高：
 
 **方式 A：直接对 relayer 端点发 `eth_call` 模拟。** 最简单：把定价
 RPC 指向 relayer，像调任何普通池子一样调 `IPropAMM.quote`（或直接模拟你
@@ -282,7 +283,7 @@ RPC 指向 relayer，像调任何普通池子一样调 `IPropAMM.quote`（或直
 `stateOverride` 参数仍优先于 overlay）。配置 console 时，`eth_call`、
 `eth_estimateGas` 和 `eth_simulateV1` 均在 EVM 执行前要求有效 taker Key，
 历史读取、没有可用 overlay 或引擎未就绪时也一样。通过鉴权后的历史读取
-使用原链上状态。`debug_traceCall` 不再套用报价 overlay。
+使用原链上状态。
 
 **方式 B：从 relayer 订阅 state override，在本地全节点用 `eth_call`
 模拟。** 适合自建模拟设施、不想把定价流量打到 relayer 的 taker：

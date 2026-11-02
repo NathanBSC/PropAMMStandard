@@ -35,21 +35,7 @@ Every other `eth_*` method returns JSON-RPC `-32601` (method not found),
 including ETH filters / subscriptions, full-block and block-receipt queries,
 proofs, and alternative submission methods. The allowlist also applies to
 batch items; disallowed notifications are discarded without execution or
-response. Use `pamm_subscribe` for quote streams and an ordinary BSC RPC for
-chain reads outside this list. Transaction and receipt lookups work directly
-on the relayer endpoint.
-
-This restriction follows each server's registered namespaces: excluding
-`pamm` from `--http.api` / `--ws.api` leaves that endpoint's full ETH API
-available. With the engine disabled no `pamm` API is registered. Local IPC
-and in-process access retain the full node API. Namespace selection still
-applies, and other namespaces keep their existing behavior.
-
-With a console configured, the execution reads, submissions, and taker
-`pamm_` reads / subscriptions require a valid taker key. The common chain,
-account, transaction, and receipt queries above do not require that key.
-Without a console configured, the header is ignored and all quotes are
-visible to everyone.
+response.
 
 One header carries identity:
 
@@ -242,15 +228,12 @@ simulated state = chain state at head + overlay(quotes in the caller's view) + c
 ```
 
 - With a console configured, all three execution reads require a valid
-  taker key before EVM execution, even for historical state, when no quotes
-  are available, or while the engine is not ready. Missing, invalid, or
-  wrong-role keys are refused with the authorization errors in §3.2;
-  unauthorized calls do not fall back to plain chain state.
+  taker key before EVM execution. Missing, invalid, or wrong-role keys are
+  refused with the authorization errors in §3.2; unauthorized calls do not
+  fall back to plain chain state.
 - The overlay applies only on the canonical head. Authorized calls to
   historical blocks or non-canonical blocks requested by hash run on plain
   state.
-- `debug_traceCall` receives no quote overlay; where the `debug` namespace
-  is exposed, it traces plain chain state.
 - Authorized calls that touch no PropAMM pool return what a plain node returns.
 - While the relayer is not synchronized with the chain head (§4) no overlay
   is applied.

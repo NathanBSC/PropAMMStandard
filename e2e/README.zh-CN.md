@@ -39,7 +39,6 @@ taker (plain wallet)
 `x-api-key` 发送，relayer 在内存中对照 console 的权限快照解析。配置
 console 时，`eth_call`、`eth_estimateGas` 和 `eth_simulateV1` 均在 EVM
 执行前拒绝未授权调用，历史读取、没有报价或引擎未就绪时也一样。
-`debug_traceCall` 不再套用报价 overlay。
 
 将 `PUBLIC_RPC` 设为普通 BSC RPC，用于 relayer 固定
 [18 个 ETH 方法白名单](../docs/api-guide.zh-CN.md#1-连接与鉴权)以外的读取。

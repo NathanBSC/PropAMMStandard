@@ -40,7 +40,6 @@ one is `https://propamm.bnbchain.org` / `wss://propamm.bnbchain.org`. Get
 permission snapshot. With a console configured, `eth_call`, `eth_estimateGas`,
 and `eth_simulateV1` reject unauthorized callers before EVM execution, even
 for historical reads, without quotes, or before the engine is ready.
-`debug_traceCall` receives no quote overlay.
 
 Set `PUBLIC_RPC` to an ordinary BSC RPC for reads outside the relayer's fixed
 [18-method ETH allowlist](../docs/api-guide.md#1-connection--authentication).

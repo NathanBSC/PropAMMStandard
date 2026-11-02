@@ -33,24 +33,14 @@ HTTP 或 WebSocket RPC 服务注册了 `pamm` 命名空间时，其 `eth` 命名
 其余 `eth_*` 方法均返回 JSON-RPC `-32601`（method not found），包括 ETH
 过滤器 / 订阅、完整区块和整块回执查询、proof 以及其他交易提交方法。
 白名单同样作用于 batch 中的每一项；被禁止的 notification 直接丢弃，
-不执行也不返回响应。报价流请用 `pamm_subscribe`，白名单以外的链上读取
-请走普通 BSC RPC。交易和回执可直接在 relayer 端点查询。
-
-限制按每个服务实际注册的命名空间生效：在 `--http.api` / `--ws.api` 中
-排除 `pamm`，该端点就保留完整 ETH API。未启用引擎时不会注册 `pamm` API。
-本地 IPC 和进程内调用保留完整节点 API。命名空间配置仍然生效，其他
-命名空间的行为不变。
-
-配置了 console 时，执行类读取、交易提交和 taker 的 `pamm_` 读取 / 订阅
-必须带有效的 taker Key。上表中的普通链、账户、交易和回执查询不要求该 Key。
-未配置 console 时，请求头被忽略，所有报价对所有调用方可见。
+不执行也不返回响应。
 
 身份只靠一个请求头：
 
 | 请求头 | 谁 | 行为 |
 | --- | --- | --- |
 | `x-api-key` | maker | 调 `pamm_sendQuoteUpdateV1` 时**必须**带，且必须是 console 签发的 **maker** Key。不带 Key 报 `missing maker API key (x-api-key header)`，Key 不认识报 `invalid API key`，角色不对报 `API key is not a maker key`。 |
-| `x-api-key` | taker | 其余 taker 侧调用（提交、`pamm_` 读取 / 订阅、`eth_call`、`eth_estimateGas` 和 `eth_simulateV1`）**必须**带有效的 taker Key——缺失、无效、角色不对各有明确报错（§3.2 错误表中的鉴权一行）。Key 决定你的视图（公开 maker，加上勾选了你的受限 maker）和 builder 路由。|
+| `x-api-key` | taker | 其余 taker 侧调用（提交、`pamm_` 读取 / 订阅、`eth_call`、`eth_estimateGas` 和 `eth_simulateV1`）**必须**带有效的 taker Key——缺失、无效、角色不对各有明确报错（§3.2 错误表中的鉴权一行）。Key 决定你的视图（公开 maker，加上勾选了你的受限 maker）和 builder 路由。 |
 
 WebSocket 上，请求头只在升级握手时读取一次，对该连接上的每个调用生效。
 
@@ -221,13 +211,11 @@ Key（§1）。模拟类方法会自动套上它：
 simulated state = chain state at head + overlay(quotes in the caller's view) + caller's own state overrides
 ```
 
-- 配置 console 时，这三个执行类读取方法都会在 EVM 执行前校验 taker Key，
-  即使请求历史状态、没有报价或引擎尚未就绪也一样。Key 缺失、无效或角色
-  不符时返回 §3.2 中的鉴权错误，不会退回普通链上状态继续执行。
+- 配置 console 时，这三个执行类读取方法均在 EVM 执行前要求有效的
+  taker Key。Key 缺失、无效或角色不符时返回 §3.2 中的鉴权错误，
+  未授权调用不会退回普通链上状态继续执行。
 - overlay 只作用于规范链头。通过鉴权后，历史块和按 hash 请求的非规范块
   在原链上状态上执行。
-- `debug_traceCall` 不再套用报价 overlay；若开放了 `debug` 命名空间，
-  它追踪的是原链上状态。
 - 通过鉴权后，没碰到任何 PropAMM 池子的调用，返回结果与普通节点一致。
 - relayer 未与链头同步时（§4）不套用 overlay。
 
