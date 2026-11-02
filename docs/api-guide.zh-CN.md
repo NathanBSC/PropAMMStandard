@@ -20,16 +20,37 @@ Unified PropAMM Relayer 是一个 BNB Chain 全节点，在标准 RPC 之上多�
 Relayer 同时提供 HTTP 和 WebSocket 两种 JSON-RPC 入口。订阅类方法
 （`pamm_subscribe`）只能走 WebSocket，其余方法两种都可以。
 
-部署方可以限制本文以外的 JSON-RPC 方法。通用的链上读取（`eth_chainId`、
-`eth_blockNumber`、`eth_getTransactionCount`、回执等）请继续用你现有的
-BSC RPC 端点。
+HTTP 或 WebSocket RPC 服务注册了 `pamm` 命名空间时，其 `eth` 命名空间
+仅开放以下 **18 个方法**：
+
+| 分组 | 允许的方法 |
+| --- | --- |
+| 执行 / 提交 | `eth_call`、`eth_estimateGas`、`eth_simulateV1`、`eth_sendRawTransaction`、`eth_sendRawTransactionSync` |
+| 链 / 费用 | `eth_chainId`、`eth_blockNumber`、`eth_syncing`、`eth_getHeaderByNumber`、`eth_getHeaderByHash`、`eth_gasPrice`、`eth_maxPriorityFeePerGas`、`eth_health` |
+| 账户 | `eth_getBalance`、`eth_getTransactionCount`、`eth_getCode` |
+| 交易 / 回执 | `eth_getTransactionByHash`、`eth_getTransactionReceipt` |
+
+其余 `eth_*` 方法均返回 JSON-RPC `-32601`（method not found），包括 ETH
+过滤器 / 订阅、完整区块和整块回执查询、proof 以及其他交易提交方法。
+白名单同样作用于 batch 中的每一项；被禁止的 notification 直接丢弃，
+不执行也不返回响应。报价流请用 `pamm_subscribe`，白名单以外的链上读取
+请走普通 BSC RPC。交易和回执可直接在 relayer 端点查询。
+
+限制按每个服务实际注册的命名空间生效：在 `--http.api` / `--ws.api` 中
+排除 `pamm`，该端点就保留完整 ETH API。未启用引擎时不会注册 `pamm` API。
+本地 IPC 和进程内调用保留完整节点 API。命名空间配置仍然生效，其他
+命名空间的行为不变。
+
+配置了 console 时，执行类读取、交易提交和 taker 的 `pamm_` 读取 / 订阅
+必须带有效的 taker Key。上表中的普通链、账户、交易和回执查询不要求该 Key。
+未配置 console 时，请求头被忽略，所有报价对所有调用方可见。
 
 身份只靠一个请求头：
 
 | 请求头 | 谁 | 行为 |
 | --- | --- | --- |
 | `x-api-key` | maker | 调 `pamm_sendQuoteUpdateV1` 时**必须**带，且必须是 console 签发的 **maker** Key。不带 Key 报 `missing maker API key (x-api-key header)`，Key 不认识报 `invalid API key`，角色不对报 `API key is not a maker key`。 |
-| `x-api-key` | taker | 其余 taker 侧调用（提交和 `pamm_` 读取 / 订阅）**必须**带有效的 taker Key——缺失、无效、角色不对各有明确报错（§3.2 错误表前三行）。Key 决定你的视图（公开 maker，加上勾选了你的受限 maker）和 builder 路由。|
+| `x-api-key` | taker | 其余 taker 侧调用（提交、`pamm_` 读取 / 订阅、`eth_call`、`eth_estimateGas` 和 `eth_simulateV1`）**必须**带有效的 taker Key——缺失、无效、角色不对各有明确报错（§3.2 错误表中的鉴权一行）。Key 决定你的视图（公开 maker，加上勾选了你的受限 maker）和 builder 路由。|
 
 WebSocket 上，请求头只在升级握手时读取一次，对该连接上的每个调用生效。
 
@@ -200,9 +221,14 @@ Key（§1）。模拟类方法会自动套上它：
 simulated state = chain state at head + overlay(quotes in the caller's view) + caller's own state overrides
 ```
 
-- overlay 只作用于规范链头。历史块、按 hash 请求的非规范块，以及块内
-  中间位置的 trace（`txIndex`）都在原状态上执行。
-- 没碰到任何 PropAMM 池子的调用，返回结果与普通节点完全一致。
+- 配置 console 时，这三个执行类读取方法都会在 EVM 执行前校验 taker Key，
+  即使请求历史状态、没有报价或引擎尚未就绪也一样。Key 缺失、无效或角色
+  不符时返回 §3.2 中的鉴权错误，不会退回普通链上状态继续执行。
+- overlay 只作用于规范链头。通过鉴权后，历史块和按 hash 请求的非规范块
+  在原链上状态上执行。
+- `debug_traceCall` 不再套用报价 overlay；若开放了 `debug` 命名空间，
+  它追踪的是原链上状态。
+- 通过鉴权后，没碰到任何 PropAMM 池子的调用，返回结果与普通节点一致。
 - relayer 未与链头同步时（§4）不套用 overlay。
 
 没有 PropAMM 专用的请求格式，像调任何合约一样调池子的 `IPropAMM.quote`
@@ -276,7 +302,12 @@ bundle，到期作废；hold 期间不进池、不广播。被 hold 的交易照
 | `a transaction with this nonce is already being matched` | 同发送方同 nonce 的另一笔交易正在撮合 |
 
 **可见性。** 进了 bundle 的交易属于私有订单流：不在公共 txpool 里，在
-builder 让它落地之前，`eth_getTransactionByHash` 返回 null。
+builder 让它落地之前，`eth_getTransactionByHash` 和
+`eth_getTransactionReceipt` 都返回 null；这两个查询可直接发到 relayer 端点。
+
+**同步提交。** `eth_sendRawTransactionSync` 使用相同的 taker 提交路径，
+要求相同的 Key，但会等待回执。提交失败返回拒绝原因，等待到期返回超时
+错误。超时不会取消已接受的交易；复用 nonce 前请继续查询回执。
 
 **报价变动。** 和你一起进 bundle 的是出块前撮合那一刻的在线报价，而不是
 你模拟时的那份快照。设置 `minAmountOut` 时要为此留出余量，它就是你的

@@ -309,10 +309,13 @@ distinct error. The key decides:
 ### 2. Get quotes from PropAMM pools
 
 Relayer RPC endpoint: `https://propamm.bnbchain.org` (WebSocket subscriptions
-use `wss://` on the same host). Keep your existing BSC RPC for general chain
-reads; a relayer deployment may restrict methods beyond the ones described
-here. A PropAMM pool's price comes from the makers' quote overlay, which only
-the relayer knows. There are three ways to get it, from least to most
+use `wss://` on the same host). HTTP/WS endpoints with `pamm` registered
+limit `eth_*` to a fixed [18-method allowlist](./api-guide.md#1-connection--authentication);
+other ETH methods return `-32601`. Common chain / account queries and
+`eth_getTransactionByHash` / `eth_getTransactionReceipt` work on the relayer
+without a taker key. Use your ordinary BSC RPC for reads outside the list.
+A PropAMM pool's price comes from the makers' quote overlay, which only the
+relayer knows. There are three ways to get it, from least to most
 integration effort:
 
 **Option A — simulate with `eth_call` directly against the relayer
@@ -320,7 +323,11 @@ endpoint.** The simplest: point your pricing RPC at the relayer and call
 `IPropAMM.quote` (or simulate your whole fill transaction) exactly like any
 other pool; there is no PropAMM-specific request format. `eth_call` is answered on **chain state plus your quote overlay**
 (only at the canonical tip; explicit `stateOverride` arguments you pass still
-win over the overlay).
+win over the overlay). With a console configured, `eth_call`,
+`eth_estimateGas`, and `eth_simulateV1` all require a valid taker key before
+EVM execution, including historical reads and calls with no available overlay
+or an engine that is not ready. Authorized historical reads use plain chain
+state. `debug_traceCall` receives no quote overlay.
 
 **Option B — subscribe to state overrides from the relayer and simulate with
 `eth_call` on your own full node.** For takers who run their own simulation
@@ -403,7 +410,8 @@ Things to know before you send real size:
   public-mempool swap. If nothing lands by the bundle's deadline, no builder
   included it; resubmit.
 - **Private until landed.** A bundled tx is not in the public txpool;
-  `eth_getTransactionByHash` returns null until a builder includes it.
+  `eth_getTransactionByHash` and `eth_getTransactionReceipt` return null
+  until a builder includes it; both queries work on the relayer endpoint.
 - **Send PropAMM fills to the relayer only** — and keep non-PropAMM traffic
   on your ordinary RPC: a tx that reads no quoted slot is sent to the
   builders on its own, with no quote behind it.

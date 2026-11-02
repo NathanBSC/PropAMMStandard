@@ -26,8 +26,8 @@ What each side needs:
 | maker ingress | `pamm_sendQuoteUpdateV1`, maker API key in `x-api-key` when the relayer runs with a console (else unauthenticated: run the endpoint privately) |
 | quote visibility | per maker setting in the console (public, or ticked takers); optional overlay snapshot stream via `pamm_subscribe` / `subscribeNewQuotesV1` (same view as `eth_call`) |
 | price ladder | `pamm_getPammPriceLevels` / `subscribePriceLevelsV1`: the router's pairs quoted at a range of sizes on the caller's view, no slot decoding needed |
-| taker pricing | plain `eth_call`, optionally with the taker API key in `x-api-key` to also see restricted makers (overlay is server-side; no `stateOverride` / `blockOverride`). Integrators that price off-relayer can apply the stream's `overrides` as `eth_call` `stateDiff`. |
-| taker fill | plain `eth_sendRawTransaction` of one push-and-swap tx (`ExamplePammTaker.swap`; the pool is push-payment), same optional header (no bundle submission) |
+| taker pricing | plain `eth_call`, with a valid taker API key in `x-api-key` when a console is configured (overlay is server-side; no `stateOverride` / `blockOverride`). Integrators that price off-relayer can apply the stream's `overrides` as `eth_call` `stateDiff`. |
+| taker fill | plain `eth_sendRawTransaction` of one push-and-swap tx (`ExamplePammTaker.swap`; the pool is push-payment), same taker key requirement (no bundle submission) |
 | ops | `pamm_status`, `pamm_getPammStateOverrides`, `pamm_subscribe` / `subscribeNewQuotesV1` and `subscribePriceLevelsV1` (WS) |
 
 ## 1. Relayer and API keys
@@ -37,8 +37,20 @@ one is `https://propamm.bnbchain.org` / `wss://propamm.bnbchain.org`. Get
 `MAKER_API_KEY` / `TAKER_API_KEY` from the console
 ([`docs/onboarding.md`](../docs/onboarding.md) Step 0); they are sent as
 `x-api-key`, which the relayer resolves in memory against the console's
-permission snapshot. Set `PUBLIC_RPC` to an ordinary BSC RPC: a relayer
-deployment may restrict methods other than the PropAMM-relevant ones.
+permission snapshot. With a console configured, `eth_call`, `eth_estimateGas`,
+and `eth_simulateV1` reject unauthorized callers before EVM execution, even
+for historical reads, without quotes, or before the engine is ready.
+`debug_traceCall` receives no quote overlay.
+
+Set `PUBLIC_RPC` to an ordinary BSC RPC for reads outside the relayer's fixed
+[18-method ETH allowlist](../docs/api-guide.md#1-connection--authentication).
+On HTTP/WS endpoints with `pamm` registered, other `eth_*` methods return
+`-32601`. Common chain / account queries and transaction / receipt lookups
+remain available without a taker key. You can poll `eth_getTransactionByHash`
+and `eth_getTransactionReceipt` directly on the relayer; both return null
+until inclusion. `eth_sendRawTransactionSync` uses the same taker submission
+path and key requirement, but waits for a receipt and can return a timeout;
+a timeout does not cancel the accepted transaction.
 
 If you run your own relayer instead (the `--propamm` geth fork), expose the
 `pamm` namespace (`--http.api eth,net,web3,pamm`, likewise `--ws.api`) and

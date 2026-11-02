@@ -21,16 +21,42 @@ reference for both sides; the normative specification is
 The relayer serves HTTP and WebSocket JSON-RPC. Subscriptions
 (`pamm_subscribe`) are WebSocket-only; everything else works on both.
 
-A deployment MAY restrict JSON-RPC methods other than the ones in this guide.
-Keep your existing BSC RPC endpoint for general chain reads
-(`eth_chainId`, `eth_blockNumber`, `eth_getTransactionCount`, receipts, …).
+When the `pamm` namespace is registered on an HTTP or WebSocket RPC server,
+its `eth` namespace is limited to these **18 methods**:
+
+| Group | Allowed methods |
+| --- | --- |
+| Execution / submission | `eth_call`, `eth_estimateGas`, `eth_simulateV1`, `eth_sendRawTransaction`, `eth_sendRawTransactionSync` |
+| Chain / fees | `eth_chainId`, `eth_blockNumber`, `eth_syncing`, `eth_getHeaderByNumber`, `eth_getHeaderByHash`, `eth_gasPrice`, `eth_maxPriorityFeePerGas`, `eth_health` |
+| Account | `eth_getBalance`, `eth_getTransactionCount`, `eth_getCode` |
+| Transaction / receipt | `eth_getTransactionByHash`, `eth_getTransactionReceipt` |
+
+Every other `eth_*` method returns JSON-RPC `-32601` (method not found),
+including ETH filters / subscriptions, full-block and block-receipt queries,
+proofs, and alternative submission methods. The allowlist also applies to
+batch items; disallowed notifications are discarded without execution or
+response. Use `pamm_subscribe` for quote streams and an ordinary BSC RPC for
+chain reads outside this list. Transaction and receipt lookups work directly
+on the relayer endpoint.
+
+This restriction follows each server's registered namespaces: excluding
+`pamm` from `--http.api` / `--ws.api` leaves that endpoint's full ETH API
+available. With the engine disabled no `pamm` API is registered. Local IPC
+and in-process access retain the full node API. Namespace selection still
+applies, and other namespaces keep their existing behavior.
+
+With a console configured, the execution reads, submissions, and taker
+`pamm_` reads / subscriptions require a valid taker key. The common chain,
+account, transaction, and receipt queries above do not require that key.
+Without a console configured, the header is ignored and all quotes are
+visible to everyone.
 
 One header carries identity:
 
 | Header | Who | Behavior |
 | --- | --- | --- |
 | `x-api-key` | maker | **Required** for `pamm_sendQuoteUpdateV1`, and must be a console-issued **maker** key. A keyless update is rejected with `missing maker API key (x-api-key header)`, an unknown key with `invalid API key`, and a valid key of the wrong role with `API key is not a maker key`. |
-| `x-api-key` | taker | **Required** on every taker-side call (submission, `pamm_` getters and subscriptions) — a missing, unknown or wrong-role key gets a distinct error (first three rows of the table in §3.2). The key decides your view (public makers, plus the restricted makers that ticked you) and your builder routing. |
+| `x-api-key` | taker | **Required** on every taker-side call (submission, `pamm_` getters and subscriptions, `eth_call`, `eth_estimateGas`, and `eth_simulateV1`) — a missing, unknown or wrong-role key gets a distinct error (authorization row in §3.2). The key decides your view (public makers, plus the restricted makers that ticked you) and your builder routing. |
 
 On WebSocket the header is read once from the upgrade handshake and applies
 to every call on that connection.
@@ -215,10 +241,17 @@ view automatically:
 simulated state = chain state at head + overlay(quotes in the caller's view) + caller's own state overrides
 ```
 
-- The overlay applies only on the canonical head. Historical blocks,
-  non-canonical blocks requested by hash and mid-block traces (`txIndex`) run
-  on plain state.
-- Calls that touch no PropAMM pool return exactly what a plain node returns.
+- With a console configured, all three execution reads require a valid
+  taker key before EVM execution, even for historical state, when no quotes
+  are available, or while the engine is not ready. Missing, invalid, or
+  wrong-role keys are refused with the authorization errors in §3.2;
+  unauthorized calls do not fall back to plain chain state.
+- The overlay applies only on the canonical head. Authorized calls to
+  historical blocks or non-canonical blocks requested by hash run on plain
+  state.
+- `debug_traceCall` receives no quote overlay; where the `debug` namespace
+  is exposed, it traces plain chain state.
+- Authorized calls that touch no PropAMM pool return what a plain node returns.
 - While the relayer is not synchronized with the chain head (§4) no overlay
   is applied.
 
@@ -304,7 +337,14 @@ Refusals, as the `eth_sendRawTransaction` error message:
 | `a transaction with this nonce is already being matched` | a different tx at the same sender and nonce is being matched right now |
 
 **Visibility.** A bundled tx is private order flow: it is not in the public
-txpool and `eth_getTransactionByHash` returns null until a builder lands it.
+txpool. Both `eth_getTransactionByHash` and `eth_getTransactionReceipt` are
+available on the relayer endpoint and return null until a builder lands it.
+
+**Synchronous submission.** `eth_sendRawTransactionSync` uses the same taker
+submission path and key requirement, but waits for a receipt. It returns a
+refusal if submission fails or a timeout error if the wait expires. A timeout
+does not cancel an accepted transaction; continue checking its receipt
+before reusing the nonce.
 
 **Quote movement.** You are bundled with the quotes live when the tx is
 matched, just before the block, not the snapshot you simulated. Set `minAmountOut` with room for
