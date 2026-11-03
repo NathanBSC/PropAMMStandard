@@ -26,8 +26,8 @@ taker (plain wallet)
 | maker 上行 | `pamm_sendQuoteUpdateV1`，relayer 接了 console 时在 `x-api-key` 里带 maker API Key（否则不鉴权：请私有部署该端点） |
 | 报价可见性 | 由 maker 在 console 设置（公开，或仅勾选的 taker）；可选通过 `pamm_subscribe` / `subscribeNewQuotesV1` 订阅 overlay 快照流（与 `eth_call` 同一视图） |
 | 价格梯子 | `pamm_getPammPriceLevels` / `subscribePriceLevelsV1`：在调用方视图上按一系列 size 对 router 的交易对报价，无需解码槽位 |
-| taker 定价 | 普通 `eth_call`，可选在 `x-api-key` 里带 taker API Key 以额外看到受限 maker（overlay 在服务端套用；不需要 `stateOverride` / `blockOverride`）。不在 relayer 上定价的接入方可以把订阅流里的 `overrides` 作为 `eth_call` 的 `stateDiff` 传入。 |
-| taker 成交 | 普通 `eth_sendRawTransaction`，发一笔「推入 + swap」交易（`ExamplePammTaker.swap`；池子是 push-payment），可选请求头同上（不提交 bundle） |
+| taker 定价 | 普通 `eth_call`，relayer 配置 console 时必须在 `x-api-key` 里带有效的 taker API Key（overlay 在服务端套用；不需要 `stateOverride` / `blockOverride`）。不在 relayer 上定价的接入方可以把订阅流里的 `overrides` 作为 `eth_call` 的 `stateDiff` 传入。 |
+| taker 成交 | 普通 `eth_sendRawTransaction`，发一笔「推入 + swap」交易（`ExamplePammTaker.swap`；池子是 push-payment），taker Key 要求同上（不提交 bundle） |
 | 运维 | `pamm_status`、`pamm_getPammStateOverrides`、`pamm_subscribe` / `subscribeNewQuotesV1` 和 `subscribePriceLevelsV1`（WS） |
 
 ## 1. Relayer 与 API Key
@@ -36,9 +36,18 @@ taker (plain wallet)
 `https://propamm.bnbchain.org` / `wss://propamm.bnbchain.org`。从 console 获取
 `MAKER_API_KEY` / `TAKER_API_KEY`（见
 [`docs/onboarding.zh-CN.md`](../docs/onboarding.zh-CN.md) 第 0 步）；它们以
-`x-api-key` 发送，relayer 在内存中对照 console 的权限快照解析。把
-`PUBLIC_RPC` 设为一个普通的 BSC RPC：relayer 部署方可能限制 PropAMM 相关
-方法以外的方法。
+`x-api-key` 发送，relayer 在内存中对照 console 的权限快照解析。配置
+console 时，`eth_call`、`eth_estimateGas` 和 `eth_simulateV1` 均在 EVM
+执行前拒绝未授权调用，历史读取、没有报价或引擎未就绪时也一样。
+
+将 `PUBLIC_RPC` 设为普通 BSC RPC，用于 relayer 固定
+[18 个 ETH 方法白名单](../docs/api-guide.zh-CN.md#1-连接与鉴权)以外的读取。
+注册了 `pamm` 的 HTTP/WS 端点对其余 `eth_*` 方法返回 `-32601`。
+普通链 / 账户查询以及交易 / 回执查询仍可使用，无需 taker Key。
+可直接在 relayer 轮询 `eth_getTransactionByHash` 和
+`eth_getTransactionReceipt`，落地前两者都返回 null。
+`eth_sendRawTransactionSync` 使用相同的 taker 提交路径和 Key 要求，但会
+等待回执，也可能返回超时；超时不会取消已接受的交易。
 
 如果改为自己运行 relayer（`--propamm` geth 分叉），需要开放 `pamm` 命名空间
 （`--http.api eth,net,web3,pamm`，`--ws.api` 同理），配置 builder，并为

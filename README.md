@@ -62,9 +62,16 @@ e2e/
 ## Key properties
 
 - **Standard-RPC taker integration** — change the RPC endpoint, not the
-  transaction model. `eth_call` is answered on chain
-  state *plus* the caller's quote overlay;
-  `eth_sendRawTransaction` submits an ordinary signed transaction.
+  transaction model. `eth_call`, `eth_estimateGas`, and `eth_simulateV1`
+  use the caller's quote overlay at the canonical tip; with a console
+  configured, all three require a valid taker key before EVM execution,
+  including historical reads and calls without an overlay.
+  `eth_sendRawTransaction` submits an ordinary signed transaction;
+  `eth_sendRawTransactionSync` waits for its receipt.
+  HTTP/WS endpoints with `pamm` registered expose a fixed
+  [18-method ETH allowlist](./docs/api-guide.md#1-connection--authentication),
+  including transaction and receipt lookups; other `eth_*` methods return
+  `-32601`.
 - **Push-payment pools** — `IPropAMM.swap` never `transferFrom`s the caller;
   the fill transfers `tokenIn` into the pool and calls `swap` in one
   transaction (an aggregator, or the reference `ExamplePammTaker`). No
@@ -92,8 +99,10 @@ e2e/
   overwriting newer ones on chain.
 - **Access control at the relayer** — maker and taker API keys are issued by
   the operator's console, role-bound, and verified in memory on every
-  request. Quote updates require a maker key and every taker-side call a
-  taker key;
+  request. With a console configured, quote updates require a maker key;
+  taker execution reads, submissions, and `pamm_` reads / subscriptions
+  require a taker key. Common chain / account / transaction / receipt queries
+  remain available without one;
   makers choose whether their stream is public or restricted to ticked
   takers.
 
