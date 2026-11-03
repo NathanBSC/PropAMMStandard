@@ -308,9 +308,9 @@ distinct error. The key decides:
 
 ### 2. Get quotes from PropAMM pools
 
-Relayer RPC endpoint: `https://propamm.bnbchain.org` (WebSocket subscriptions
-use `wss://` on the same host). HTTP/WS endpoints with `pamm` registered
-limit `eth_*` to a fixed [18-method allowlist](./api-guide.md#1-connection--authentication);
+Relayer RPC endpoint: `https://propamm.bnbchain.org` (WebSocket
+subscriptions use `wss://` on the same host). The relayer limits `eth_*` to
+a fixed [18-method allowlist](./api-guide.md#1-connection--authentication);
 other ETH methods return `-32601`. Common chain / account queries work on
 the relayer without a taker key. Use your ordinary BSC RPC for reads outside
 the list.
@@ -325,19 +325,16 @@ endpoint.** The simplest: point your pricing RPC at the relayer and call
 other pool; there is no PropAMM-specific request format. `eth_call` is
 answered on **chain state plus your quote overlay** (only at the canonical
 tip; explicit `stateOverride` arguments you pass still win over the overlay).
-Over HTTP/WS with a console configured, `eth_call`, `eth_estimateGas`,
-`eth_simulateV1`, and `debug_traceCall` all require a valid taker key before
-block lookup or state reconstruction, including historical reads, `txIndex`
-traces, and calls without an overlay or while the engine is not ready.
-Authorized historical reads use plain chain state.
+`eth_call`, `eth_estimateGas`, `eth_simulateV1`, and `debug_traceCall` all
+require a valid taker key before block lookup or state reconstruction,
+including historical reads, `txIndex` traces, and calls without an overlay
+or while the engine is not ready. Authorized historical reads use plain
+chain state.
 
-For tracing, enable `debug` in `--http.api` / `--ws.api` on your own relayer
-(or ask the operator for an enabled endpoint). With `pamm` registered,
-`debug_traceCall` is the only allowed `debug_*` method. Its overlay applies
+For tracing, use `debug_traceCall`, the only allowed `debug_*` method.
+Its overlay applies
 only to complete canonical-tip post-state without `txIndex`; explicit user
-state overrides win. Local IPC, in-process RPC, and node-internal execution
-reads skip taker authorization and quote overlays, using plain chain state.
-Use HTTP/WS to price on a taker's quote view.
+state overrides win.
 
 **Option B — subscribe to state overrides from the relayer and simulate with
 `eth_call` on your own full node.** For takers who run their own simulation
