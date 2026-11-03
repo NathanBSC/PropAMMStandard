@@ -35,12 +35,17 @@ HTTP 或 WebSocket RPC 服务注册了 `pamm` 命名空间时，其 `eth` 命名
 白名单同样作用于 batch 中的每一项；被禁止的 notification 直接丢弃，
 不执行也不返回响应。
 
+同一端点的 `debug_*` 方法仅允许 `debug_traceCall`，其余均返回 `-32601`。
+仍需在 `--http.api` / `--ws.api` 中启用 `debug` 命名空间。上述方法限制
+适用于单次调用、batch 的每一项和 notification；未注册 `pamm` 的端点、
+本地 IPC 和进程内 RPC 不受该白名单限制，命名空间配置仍然生效。
+
 身份只靠一个请求头：
 
 | 请求头 | 谁 | 行为 |
 | --- | --- | --- |
 | `x-api-key` | maker | 调 `pamm_sendQuoteUpdateV1` 时**必须**带，且必须是 console 签发的 **maker** Key。不带 Key 报 `missing maker API key (x-api-key header)`，Key 不认识报 `invalid API key`，角色不对报 `API key is not a maker key`。 |
-| `x-api-key` | taker | 其余 taker 侧调用（提交、`pamm_` 读取 / 订阅、`eth_call`、`eth_estimateGas` 和 `eth_simulateV1`）**必须**带有效的 taker Key——缺失、无效、角色不对各有明确报错（§3.2 错误表中的鉴权一行）。Key 决定你的视图（公开 maker，加上勾选了你的受限 maker）和 builder 路由。 |
+| `x-api-key` | taker | 其余 taker 侧调用（提交、`pamm_` 读取 / 订阅，以及 HTTP/WS 执行类读取：`eth_call`、`eth_estimateGas`、`eth_simulateV1`、`debug_traceCall`）**必须**带有效的 taker Key——缺失、无效、角色不对各有明确报错（§3.2 错误表中的鉴权一行）。Key 决定你的视图（公开 maker，加上勾选了你的受限 maker）和 builder 路由。 |
 
 WebSocket 上，请求头只在升级握手时读取一次，对该连接上的每个调用生效。
 
@@ -198,22 +203,28 @@ maker，也必须保证每秒发几条。
 
 Relayer 为每个调用方维护一个**视图**：先确定这个调用方能看到哪些 maker
 （公开 maker，加上勾选了它的受限 maker），再把这些 maker 的全部在线报价
-按槽位取最新值，合并成一份写集，这就是 overlay。视图需要有效的 taker
-Key（§1）。模拟类方法会自动套上它：
+按槽位取最新值，合并成一份写集，这就是 overlay。HTTP/WS 上，配置 console
+时需要有效的 taker Key（§1）；未配置 console 时所有报价可见。
+以下执行类读取会自动套用该视图：
 
 | 方法 | 行为 |
 | --- | --- |
 | `eth_call` | 在规范链头的链上状态**加上**调用方 overlay 执行。显式传入的 `stateOverride` 优先于 overlay |
 | `eth_estimateGas` | 与 `eth_call` 相同的 overlay |
 | `eth_simulateV1` | overlay 只应用一次，加在第一个模拟块之前的基础状态上 |
+| `debug_traceCall` | 对规范链头的完整块后状态套用调用方 overlay，再应用显式用户状态覆盖；历史块和块内 `txIndex` trace 使用原链上状态 |
 
 ```text
 simulated state = chain state at head + overlay(quotes in the caller's view) + caller's own state overrides
 ```
 
-- 配置 console 时，这三个执行类读取方法均在 EVM 执行前要求有效的
-  taker Key。Key 缺失、无效或角色不符时返回 §3.2 中的鉴权错误，
+- HTTP/WS 上配置 console 时，这四个执行类读取方法均在查询区块或重建
+  状态前要求有效 taker Key；历史块、`txIndex` 请求、没有报价或引擎未就绪
+  时也一样。Key 缺失、无效或角色不符时返回 §3.2 中的鉴权错误，
   未授权调用不会退回普通链上状态继续执行。
+- 本地 IPC、进程内 RPC 和节点内部直接执行的读取（包括共识的系统合约
+  读取）跳过 taker 鉴权，使用原链上状态，不套用报价 overlay。
+  按 taker 的报价视图定价请使用 HTTP/WS，并携带该 taker 的 Key。
 - overlay 只作用于规范链头。通过鉴权后，历史块和按 hash 请求的非规范块
   在原链上状态上执行。
 - 通过鉴权后，没碰到任何 PropAMM 池子的调用，返回结果与普通节点一致。
@@ -553,6 +564,11 @@ builder（按品牌，如 `48club` / `blockrazor`，或具体的 endpoint 名）
 - `peering`：与运营方其他 relayer 之间的报价共享；未配置时没有该字段。
 - `builders`：已配置的 builder 名单。
 - 状态输出里永远不会出现任何 Key 材料。
+
+运维排查时，通过鉴权的 HTTP/WS 执行类读取会记录
+`[pamm] execution request`，包含 `api` 和 `takerUID`。Taker 提交通过鉴权后
+记录 `[pamm] taker transaction received`，包含交易哈希（`tx`）和
+`takerUID`；仅有该日志不代表交易已通过全部到达检查或已落地。
 
 ---
 

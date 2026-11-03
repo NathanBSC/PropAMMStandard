@@ -37,8 +37,15 @@ taker (plain wallet)
 `MAKER_API_KEY` / `TAKER_API_KEY`（见
 [`docs/onboarding.zh-CN.md`](../docs/onboarding.zh-CN.md) 第 0 步）；它们以
 `x-api-key` 发送，relayer 在内存中对照 console 的权限快照解析。配置
-console 时，`eth_call`、`eth_estimateGas` 和 `eth_simulateV1` 均在 EVM
-执行前拒绝未授权调用，历史读取、没有报价或引擎未就绪时也一样。
+console 时，HTTP/WS 上的 `eth_call`、`eth_estimateGas`、`eth_simulateV1`
+和 `debug_traceCall` 均在查询区块或重建状态前拒绝未授权调用，历史读取、
+`txIndex` trace、没有报价或引擎未就绪时也一样。
+
+可选的 trace 需要在 `--http.api` / `--ws.api` 中启用 `debug`；注册 `pamm`
+后，该命名空间仅允许 `debug_traceCall`。它只对不带 `txIndex` 的规范链头
+完整块后状态套用调用方 overlay，之后再应用显式用户状态覆盖。本地 IPC、
+进程内 RPC 和节点内部执行类读取使用原链上状态，不校验 taker 身份，
+也不套用报价 overlay。Taker 定价请走 HTTP/WS。
 
 将 `PUBLIC_RPC` 设为普通 BSC RPC，用于 relayer 固定
 [18 个 ETH 方法白名单](../docs/api-guide.zh-CN.md#1-连接与鉴权)以外的读取。

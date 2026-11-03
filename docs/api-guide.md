@@ -37,12 +37,19 @@ proofs, and alternative submission methods. The allowlist also applies to
 batch items; disallowed notifications are discarded without execution or
 response.
 
+On the same endpoint, `debug_traceCall` is the only allowed `debug_*`
+method; other `debug_*` calls return `-32601`. The `debug` namespace must
+still be enabled in `--http.api` / `--ws.api`. These method restrictions
+apply to individual calls, batch items, and notifications. They do not apply
+to endpoints without `pamm` registered, or to local IPC / in-process RPC;
+namespace selection still applies.
+
 One header carries identity:
 
 | Header | Who | Behavior |
 | --- | --- | --- |
 | `x-api-key` | maker | **Required** for `pamm_sendQuoteUpdateV1`, and must be a console-issued **maker** key. A keyless update is rejected with `missing maker API key (x-api-key header)`, an unknown key with `invalid API key`, and a valid key of the wrong role with `API key is not a maker key`. |
-| `x-api-key` | taker | **Required** on every taker-side call (submission, `pamm_` getters and subscriptions, `eth_call`, `eth_estimateGas`, and `eth_simulateV1`) — a missing, unknown or wrong-role key gets a distinct error (authorization row in §3.2). The key decides your view (public makers, plus the restricted makers that ticked you) and your builder routing. |
+| `x-api-key` | taker | **Required** on every taker-side call (submission, `pamm_` getters and subscriptions, and HTTP/WS execution reads: `eth_call`, `eth_estimateGas`, `eth_simulateV1`, `debug_traceCall`) — a missing, unknown or wrong-role key gets a distinct error (authorization row in §3.2). The key decides your view (public makers, plus the restricted makers that ticked you) and your builder routing. |
 
 On WebSocket the header is read once from the upgrade handshake and applies
 to every call on that connection.
@@ -214,23 +221,31 @@ times a second.
 For every caller the relayer maintains a **view**: the merged, per-slot
 freshest write-set of all live quotes from the makers that caller may see —
 the public makers plus the restricted makers that ticked the caller's taker
-key. The view requires a valid taker key (§1). Simulation methods apply the
-view automatically:
+key. Over HTTP/WS, the view requires a valid taker key when a console is
+configured (§1); without a console, all quotes are visible. The following
+execution reads apply this view automatically:
 
 | Method | Behavior |
 | --- | --- |
 | `eth_call` | executed on chain state at the canonical tip **plus** the caller's overlay; explicit `stateOverride` arguments win over the overlay |
 | `eth_estimateGas` | same overlay as `eth_call` |
 | `eth_simulateV1` | the overlay is applied once, to the base state ahead of the first simulated block |
+| `debug_traceCall` | the caller's overlay is applied to complete canonical-tip post-state before explicit user state overrides; historical and mid-block `txIndex` traces use plain chain state |
 
 ```text
 simulated state = chain state at head + overlay(quotes in the caller's view) + caller's own state overrides
 ```
 
-- With a console configured, all three execution reads require a valid
-  taker key before EVM execution. Missing, invalid, or wrong-role keys are
-  refused with the authorization errors in §3.2; unauthorized calls do not
-  fall back to plain chain state.
+- Over HTTP/WS with a console configured, all four execution reads require
+  a valid taker key before block lookup or state reconstruction, including
+  historical and `txIndex` requests, calls without quotes, and calls while
+  the engine is not ready. Missing, invalid, or wrong-role keys are refused
+  with the authorization errors in §3.2; unauthorized calls do not fall back
+  to plain chain state.
+- Local IPC, in-process RPC, and direct node-internal execution reads
+  (including consensus system-contract reads) bypass taker authorization
+  and use plain chain state without quote overlays. Use HTTP/WS with a
+  taker's key to price on that taker's view.
 - The overlay applies only on the canonical head. Authorized calls to
   historical blocks or non-canonical blocks requested by hash run on plain
   state.
@@ -606,6 +621,12 @@ widened.
   not configured.
 - `builders` — the configured builder endpoints by name.
 - No key material ever appears in the status.
+
+For operator diagnostics, authorized HTTP/WS execution reads log
+`[pamm] execution request` with `api` and `takerUID`. Taker submissions log
+`[pamm] taker transaction received` with the transaction hash (`tx`) and
+`takerUID` after authorization; this log alone does not mean the transaction
+passed all arrival checks or landed.
 
 ---
 

@@ -37,9 +37,18 @@ one is `https://propamm.bnbchain.org` / `wss://propamm.bnbchain.org`. Get
 `MAKER_API_KEY` / `TAKER_API_KEY` from the console
 ([`docs/onboarding.md`](../docs/onboarding.md) Step 0); they are sent as
 `x-api-key`, which the relayer resolves in memory against the console's
-permission snapshot. With a console configured, `eth_call`, `eth_estimateGas`,
-and `eth_simulateV1` reject unauthorized callers before EVM execution, even
-for historical reads, without quotes, or before the engine is ready.
+permission snapshot. Over HTTP/WS with a console configured, `eth_call`,
+`eth_estimateGas`, `eth_simulateV1`, and `debug_traceCall` reject unauthorized
+callers before block lookup or state reconstruction, including historical
+reads, `txIndex` traces, calls without quotes, and calls before the engine
+is ready.
+
+For optional tracing, enable `debug` in `--http.api` / `--ws.api`; with
+`pamm` registered, only `debug_traceCall` is allowed in that namespace.
+It applies the caller's overlay only to complete canonical-tip post-state
+without `txIndex`, before explicit user state overrides. Local IPC,
+in-process RPC, and node-internal execution reads use plain chain state
+without taker authorization or quote overlays. Use HTTP/WS for taker pricing.
 
 Set `PUBLIC_RPC` to an ordinary BSC RPC for reads outside the relayer's fixed
 [18-method ETH allowlist](../docs/api-guide.md#1-connection--authentication).

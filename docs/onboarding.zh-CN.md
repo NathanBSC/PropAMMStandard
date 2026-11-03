@@ -280,10 +280,17 @@ PropAMM 池子的价格来自 maker 的报价 overlay，只有 relayer 知道；
 RPC 指向 relayer，像调任何普通池子一样调 `IPropAMM.quote`（或直接模拟你
 整笔成交交易），没有 PropAMM 专用的请求格式。`eth_call`
 在**链上状态加你的报价 overlay** 上作答（只对规范链头生效；你显式传的
-`stateOverride` 参数仍优先于 overlay）。配置 console 时，`eth_call`、
-`eth_estimateGas` 和 `eth_simulateV1` 均在 EVM 执行前要求有效 taker Key，
-历史读取、没有可用 overlay 或引擎未就绪时也一样。通过鉴权后的历史读取
-使用原链上状态。
+`stateOverride` 参数仍优先于 overlay）。HTTP/WS 上配置 console 时，
+`eth_call`、`eth_estimateGas`、`eth_simulateV1` 和 `debug_traceCall` 均在
+查询区块或重建状态前要求有效 taker Key；历史读取、`txIndex` trace、
+没有 overlay 或引擎未就绪时也一样。通过鉴权后的历史读取使用原链上状态。
+
+需要 trace 时，在自建 relayer 的 `--http.api` / `--ws.api` 中启用 `debug`
+（或向运营方获取已开放该命名空间的端点）。注册 `pamm` 后，`debug_*`
+仅允许 `debug_traceCall`。它只对不带 `txIndex` 的规范链头完整块后状态
+套用 overlay，显式用户状态覆盖优先。本地 IPC、进程内 RPC 和节点内部
+执行类读取跳过 taker 鉴权及报价 overlay，使用原链上状态。
+按 taker 的报价视图定价请走 HTTP/WS。
 
 **方式 B：从 relayer 订阅 state override，在本地全节点用 `eth_call`
 模拟。** 适合自建模拟设施、不想把定价流量打到 relayer 的 taker：
